@@ -1,0 +1,16 @@
+[package]
+name = "rustdaw_app"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+egui.workspace = true
+cpal.workspace = true
+ringbuf.workspace = true
+rustdaw_engine = { path = "../rustdaw_engine" }
+rustdaw_sequencer = { path = "../rustdaw_sequencer" }
+rustdaw_sampler = { path = "../rustdaw_sampler" }
+rustdaw_effects = { path = "../rustdaw_effects" }
