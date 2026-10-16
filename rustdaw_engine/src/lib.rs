@@ -303,10 +303,13 @@ mod tests {
         env.set_param(0.01, 0.01, 0.8, 0.1);
         env.trigger_on();
         // Attack phase
+        let mut last_sample = 0.0;
         for _ in 0..((44100 as f32 * 0.01) as usize) {
             let sample = env.next_sample();
+            last_sample = sample;
             assert!(sample >= 0.0 && sample <= 1.0);
         }
+        assert!((last_sample - 1.0).abs() < 1e-3, "Attack peak should reach ~1.0");
         // Decay phase
         for _ in 0..((44100 as f32 * 0.01) as usize) {
             let sample = env.next_sample();

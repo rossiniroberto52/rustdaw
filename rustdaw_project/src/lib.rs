@@ -52,8 +52,8 @@ impl DawProject {
     where
         P: AsRef<Path>,
     {
+        use hound::{WavSpec, WavWriter};
         use rustdaw_engine::{OfflineRenderer, Voice, Waveform};
-        use rustdaw_engine::wav::{writer, WavSpec, SampleFormat};
 
         let mut renderer = OfflineRenderer::new(44100, 2);
         // Create a voice for each active step? For simplicity, we'll just use one voice that plays
@@ -70,9 +70,13 @@ impl DawProject {
             channels: 2,
             sample_rate: 44100,
             bits_per_sample: 32,
-            sample_format: SampleFormat::F32,
+            sample_format: hound::SampleFormat::Float,
         };
-        writer(path, &spec, &buffer)?;
+        let mut writer = WavWriter::create(path, spec)?;
+        for sample in buffer {
+            writer.write_sample(sample)?;
+        }
+        writer.finalize()?;
         Ok(())
     }
 }

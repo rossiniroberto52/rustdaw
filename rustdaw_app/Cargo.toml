@@ -3,6 +3,7 @@ name = "rustdaw_app"
 version.workspace = true
 edition.workspace = true
 publish = false
+
 [dependencies]
 rustdaw_visualizer = { path = "../rustdaw_visualizer" }
 serde.workspace = true
@@ -14,5 +15,9 @@ rustdaw_engine = { path = "../rustdaw_engine" }
 rustdaw_sequencer = { path = "../rustdaw_sequencer" }
 rustdaw_sampler = { path = "../rustdaw_sampler" }
 rustdaw_effects = { path = "../rustdaw_effects" }
+
+[package.metadata.packager]
+format = ["nsis"]
+
 [features]
 audio = ["cpal"]

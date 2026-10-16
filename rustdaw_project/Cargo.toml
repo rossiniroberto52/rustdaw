@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 publish = false
 [dependencies]
+hound = "3.5.1"
 serde.workspace = true
 serde_json.workspace = true
 rustdaw_engine = { path = "../rustdaw_engine" }
