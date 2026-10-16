@@ -229,6 +229,13 @@ impl Voice {
     pub fn set_frequency(&mut self, freq: f32) {
         self.oscillator.set_frequency(freq);
     }
+
+    /// Get the next sample as a stereo pair (left, right).
+    pub fn next_sample(&mut self) -> [f32; 2] {
+        let mut output = [0.0, 0.0];
+        self.process(&mut output);
+        output
+    }
 }
 
 impl AudioProcessor for Voice {

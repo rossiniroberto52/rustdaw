@@ -54,7 +54,129 @@ impl DawProject {
     /// This function generates a demo pattern with kick, hat, and synth over 4 measures.
     pub fn export_wav<P: AsRef<Path>>(&self, path: P, duration_seconds: f32) -> Result<(), Box<dyn std::error::Error>>
     where
-        P: AsRef<Path>,
+        P: AsRef<Path>
+    {
+        use rustdaw_engine::{Voice, Waveform};
+        use hound::{WavSpec, WavWriter};
+
+        // Create a voice for audio generation.
+        let mut voice = Voice::new(44100.0, 60.0, Waveform::Sine);
+        // We'll set the envelope to have a quick attack and decay for a more percussive sound? 
+        // But the Voice's envelope is internal and we cannot change it from outside without modifying the engine.
+        // We'll use the default envelope.
+
+        // We'll use the project's sequencer.
+        let mut sequencer = self.sequencer.clone();
+        // Set the BPM from the project.
+        sequencer.set_bpm(self.bpm);
+        // We'll set up a pattern for one measure (16 steps) where:
+        //   Step 0: kick (MIDI 36)
+        //   Step 2: hat (MIDI 42)
+        //   Step 4: synth (MIDI 60)
+        //   Step 6: hat (MIDI 42)
+        //   Step 8: kick (MIDI 36)
+        //   Step 10: hat (MIDI 42)
+        //   Step 12: synth (MIDI 60)
+        //   Step 14: hat (MIDI 42)
+        // And the rest are silent.
+
+        // Clear all steps first.
+        for i in 0..16 {
+            sequencer.steps[i].note = None;
+        }
+        let pattern = [36, 0, 42, 0, 60, 0, 42, 0, 36, 0, 42, 0, 60, 0, 42, 0];
+        for (i, &note) in pattern.iter().enumerate() {
+            if note != 0 {
+                sequencer.steps[i].note = Some(rustdaw_sequencer::Note { note, velocity: 100 });
+            }
+        }
+
+        // Now, we generate the audio.
+        let sample_rate = 44100;
+        let num_samples = (duration_seconds * sample_rate as f32) as usize;
+        let mut left_channel = Vec::with_capacity(num_samples);
+        let mut right_channel = Vec::with_capacity(num_samples);
+
+        // We need to track the sequencer position and time accumulator.
+        let mut step_pos: f32 = 0.0;
+        let mut time_accum: f32 = 0.0;
+        let sec_per_step = 60.0 / self.bpm / 16.0; // 16 steps per beat
+
+        // We'll also track the last note to avoid retriggering the same note.
+        let mut last_note: Option<rustdaw_sequencer::Note> = None;
+
+        for _ in 0..num_samples {
+            // Update sequencer position based on time.
+            time_accum += 1.0 / sample_rate as f32;
+            let mut steps_to_advance = 0;
+            while time_accum >= sec_per_step {
+                time_accum -= sec_per_step;
+                steps_to_advance += 1;
+            }
+            if steps_to_advance > 0 {
+                // Update the step position.
+                let old_step = step_pos as usize;
+                step_pos = (step_pos + steps_to_advance as f32) % 16.0;
+                let new_step = step_pos as usize;
+
+                // Get the note for the old step (if any) and the new step (if any).
+                let old_note = sequencer.get_step(old_step).and_then(|s| s.note.clone());
+                let new_note = sequencer.get_step(new_step).and_then(|s| s.note.clone());
+
+                // If we are playing (we always are for the demo), update the voice based on the note change.
+                {
+                    // Turn off the old note if it is not the same as the new note.
+                    if let Some(ref note) = old_note {
+                        if new_note.as_ref() != Some(note) {
+                            voice.note_off();
+                            last_note = None;
+                        }
+                    }
+
+                    // Turn on the new note if it is not the same as the old note.
+                    if let Some(ref note) = new_note {
+                        if last_note.as_ref() != Some(note) {
+                            voice.set_frequency(midi_to_hz(note.note));
+                            voice.note_on();
+                            last_note = Some(note.clone());
+                        }
+                    }
+                }
+            }
+
+            // Get a sample from the voice.
+            let sample = voice.next_sample();
+            left_channel.push(sample);
+            right_channel.push(sample);
+        }
+
+        // Helper function to convert MIDI note to frequency.
+        fn midi_to_hz(note: u8) -> f32 {
+            440.0 * 2.0f32.powf((note as f32 - 69.0) / 12.0)
+        }
+
+        // Interleave left and right channels for stereo.
+        let mut interleaved = Vec::with_capacity(num_samples * 2);
+        for i in 0..num_samples {
+            interleaved.push(left_channel[i]);
+            interleaved.push(right_channel[i]);
+        }
+
+        // Write to WAV file.
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 44100,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = WavWriter::create(path, spec)?;
+        for sample in interleaved {
+            writer.write_sample(sample)?;
+        }
+        writer.finalize()?;
+        Ok(())
+    where
+        P: AsRef<Path>
     {
         use rustdaw_engine::{Voice, Waveform};
         use hound::{WavSpec, WavWriter};
