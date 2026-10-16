@@ -9,27 +9,19 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release
+      - name: Package with cargo-packager
+        uses: baptiste0928/cargo-packager-action@v1
+        with:
+          config: Packager.toml
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustdaw-installer
+          path: ./target/release/*.exe
 
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
-        override: true
-
-    - name: Install cargo-packager
-      run: cargo install cargo-packager
-
-    - name: Build release
-      run: cargo build --release -p rustdaw_app
-
-    - name: Create installer
-      run: cargo packager --release -p rustdaw_app --output ./installer
-
-    - name: Upload installer as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: rustdaw-installer-windows
-        path: installer/**
