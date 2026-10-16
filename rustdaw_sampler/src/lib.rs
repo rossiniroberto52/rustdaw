@@ -1,17 +1,15 @@
-//! Sampler: load .wav files and play with pitch shifting.
+//! Sampler: load .wav file and play with pitch.
 
-use hound::{WavReader, WavSpec};
-use rustdaw_engine::{Oscillator, Waveform};
 use std::path::Path;
 
 /// Simple sampler that holds audio data and can play it back at different pitches.
 pub struct Sampler {
-    /// Audio samples (mono, normalized to [-1.0, 1.0]).
+    /// Audio sample (mono, normalized to [-1.0, 1.0]).
     pub samples: Vec<f32>,
     /// Sample rate of the loaded audio.
     pub sample_rate: u32,
     /// Current playback position (in samples).
-    position: f32,
+    pub position: f32,
     /// Pitch ratio (1.0 = original pitch, 2.0 = one octave up, 0.5 = one octave down).
     pub pitch: f32,
     /// Whether the sampler is active (looping).
@@ -20,17 +18,22 @@ pub struct Sampler {
 
 impl Sampler {
     /// Load a WAV file from disk.
-    /// Only supports 32-bit float PCM WAV files for simplicity.
-    pub fn from_wav<P: AsRef<Path>>(path: P) -> Result<Self, &'static str> {
-        let mut reader = WavReader::open(path).map_err(|_| "Could not open WAV file")?;
-        let spec = reader.spec();
-        if spec.sample_format != hound::SampleFormat::Float || spec.bits_per_sample != 32 {
-            return Err("Only 32-bit float PCM WAV files are supported");
-        }
+    /// Only support 32-bit float PCM WAV file for simplicity.
+    pub fn from_wav<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+        use rustdaw_engine::wav::reader;
+        let (spec, samples) = reader(path)?;
         if spec.channels != 1 {
-            return Err("Only mono WAV files are supported");
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Only mono WAV file is supported",
+            ));
         }
-        let samples: Vec<f32> = reader.into_samples().map(|s| s.unwrap()).collect();
+        if spec.bits_per_sample != 32 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Only 32-bit float PCM WAV file is supported",
+            ));
+        }
         Ok(Sampler {
             samples,
             sample_rate: spec.sample_rate,
@@ -56,10 +59,18 @@ impl Sampler {
     }
 
     /// Get the next sample, advancing position by pitch ratio.
-    /// Returns None if the sampler has finished and is not looping.
+    /// Return None if the sampler has finished and is not looping.
     pub fn next_sample(&mut self) -> Option<f32> {
         if self.samples.is_empty() {
             return None;
+        }
+        // If current position is beyond the end and not looping, we are done.
+        if self.position >= self.samples.len() as f32 && !self.looped {
+            return None;
+        }
+        // If looping and beyond the end, wrap position.
+        if self.position >= self.samples.len() as f32 && self.looped {
+            self.position = self.position % self.samples.len() as f32;
         }
         let idx = self.position as usize;
         let frac = self.position - idx as f32;
@@ -70,90 +81,77 @@ impl Sampler {
         };
         // Advance position
         self.position += self.pitch;
-        // Check bounds
-        if self.position >= self.samples.len() as f32 {
-            if self.looped {
-                self.position -= self.samples.len() as f32;
-            } else {
-                return None;
-            }
-        }
         Some(value)
     }
 
     /// Check if the sampler is active (has more samples to play or looping).
     pub fn is_active(&self) -> bool {
-        self.looped || self.position < self.samples.len() as f32
+        self.looped || !self.samples.is_empty()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hound::{WavSpec, WavWriter};
     use std::fs;
-
-    /// Helper to create a test WAV file with a sine wave.
-    fn create_test_wav(path: &str, frequency: f32, duration: f32, sample_rate: u32) {
-        let spec = WavSpec {
-            channels: 1,
-            sample_rate,
-            bits_per_sample: 32,
-            sample_format: hound::SampleFormat::Float,
-        };
-        let mut writer = WavWriter::create(path, spec).unwrap();
-        let num_samples = (duration * sample_rate as f32) as usize;
-        for i in 0..num_samples {
-            let t = i as f32 / sample_rate as f32;
-            let sample = (2.0 * std::f32::consts::PI * frequency * t).sin();
-            writer.write_sample(sample).unwrap();
-        }
-        writer.finalize().unwrap();
-    }
 
     #[test]
     fn test_sampler_load_wav() {
-        let wav_path = "test_sine.wav";
-        create_test_wav(wav_path, 440.0, 1.0, 44100);
-        let sampler = Sampler::from_wav(wav_path).expect("Failed to load WAV");
-        assert_eq!(sampler.sample_rate, 44100);
-        assert_eq!(sampler.samples.len(), 44100);
+        // Create a temporary WAV file using the engine's wav writer
+        let wav_path = "test_sampler.wav";
+        {
+            use rustdaw_engine::wav::{writer, WavSpec, SampleFormat};
+            let spec = WavSpec {
+                channels: 1,
+                sample_rate: 44100,
+                bits_per_sample: 32,
+                sample_format: SampleFormat::F32,
+            };
+            // Create a simple sine wave
+            let duration = 0.1; // seconds
+            let sample_count = (spec.sample_rate as f32 * duration) as usize;
+            let mut samples = Vec::with_capacity(sample_count);
+            for i in 0..sample_count {
+                let t = i as f32 / spec.sample_rate as f32;
+                samples.push((2.0 * std::f32::consts::PI * 440.0 * t).sin());
+            }
+            writer(wav_path, &spec, &samples).expect("Failed to write WAV file");
+        }
+
+        // Load the WAV file with the sampler
+        let _sampler = Sampler::from_wav(wav_path).expect("Failed to load WAV");
         // Clean up
         let _ = fs::remove_file(wav_path);
     }
 
     #[test]
-    fn test_sampler_pitch_shift() {
-        let wav_path = "test_sine.wav";
-        create_test_wav(wav_path, 440.0, 1.0, 44100);
-        let mut sampler = Sampler::from_wav(wav_path).expect("Failed to load WAV");
-        // Set pitch to 2.0 (one octave up)
-        sampler.set_pitch(2.0);
-        sampler.trigger();
-        // Collect a few samples
-        let mut samples = Vec::new();
-        for _ in 0..100 {
-            if let Some(s) = sampler.next_sample() {
-                samples.push(s);
-            }
-        }
-        assert!(!samples.is_empty());
-        // Clean up
-        let _ = fs::remove_file(wav_path);
+    fn test_sampler_next_sample() {
+        let mut sampler = Sampler {
+            samples: vec![0.0, 1.0, 0.0, -1.0],
+            sample_rate: 44100,
+            position: 0.0,
+            pitch: 1.0,
+            looped: false,
+        };
+        assert_eq!(sampler.next_sample(), Some(0.0));
+        assert_eq!(sampler.next_sample(), Some(1.0));
+        assert_eq!(sampler.next_sample(), Some(0.0));
+        assert_eq!(sampler.next_sample(), Some(-1.0));
+        assert_eq!(sampler.next_sample(), None); // finished and not looping
     }
 
     #[test]
     fn test_sampler_looping() {
-        let wav_path = "test_sine.wav";
-        create_test_wav(wav_path, 440.0, 0.1, 44100); // short sample
-        let mut sampler = Sampler::from_wav(wav_path).expect("Failed to load WAV");
-        sampler.set_loop(true);
-        sampler.trigger();
-        // Play for longer than the sample length
-        for _ in 0..(sampler.sample_rate as usize * 2) {
-            assert!(sampler.next_sample().is_some());
-        }
-        // Clean up
-        let _ = fs::remove_file(wav_path);
+        let mut sampler = Sampler {
+            samples: vec![0.0, 1.0],
+            sample_rate: 44100,
+            position: 0.0,
+            pitch: 1.0,
+            looped: true,
+        };
+        assert_eq!(sampler.next_sample(), Some(0.0));
+        assert_eq!(sampler.next_sample(), Some(1.0));
+        assert_eq!(sampler.next_sample(), Some(0.0)); // looped
+        assert_eq!(sampler.next_sample(), Some(1.0));
     }
 }

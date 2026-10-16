@@ -3,9 +3,8 @@ name = "rustdaw_sampler"
 version.workspace = true
 edition.workspace = true
 publish = false
-
 [dependencies]
+byteorder.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-hound.workspace = true
 rustdaw_engine = { path = "../rustdaw_engine" }

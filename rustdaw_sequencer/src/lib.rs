@@ -1,6 +1,6 @@
 //! Musical sequencer: step sequencer (16 steps) and piano roll data model.
 
-use serde::{Deserialize, serialize};
+use serde::{Deserialize, Serialize};
 
 /// Representa uma nota musical (MIDI note number) e sua velocidade (velocity).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -18,7 +18,7 @@ impl Note {
 }
 
 /// Passo do sequencer: pode estar vazio ou conter uma nota.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize, Copy)]
 pub struct Step {
     /// Nota opcional neste passo.
     pub note: Option<Note>,
@@ -39,7 +39,7 @@ impl Step {
 }
 
 /// Sequencer de passos com 16 passos.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct StepSequencer {
     /// Os 16 passos.
     pub steps: [Step; 16],
@@ -82,7 +82,7 @@ impl StepSequencer {
 
 /// Modelo de dados para piano roll (roll de piano).
 /// Cada linha representa uma nota MIDI (0-127) e cada coluna representa um tempo discretizado.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct PianoRoll {
     /// Grade de notas: linhas = notas MIDI (0-127), colunas = ticks (unidades de tempo).
     /// O valor é a velocidade (0-127) ou 0 se não houver nota.

@@ -3,16 +3,16 @@ name = "rustdaw_app"
 version.workspace = true
 edition.workspace = true
 publish = false
-
 [dependencies]
+rustdaw_visualizer = { path = "../rustdaw_visualizer" }
 serde.workspace = true
 serde_json.workspace = true
-egui.workspace = true
-cpal.workspace = true
+eframe = { version = "0.28" }
+cpal = { version = "0.15", optional = true }
 ringbuf.workspace = true
 rustdaw_engine = { path = "../rustdaw_engine" }
 rustdaw_sequencer = { path = "../rustdaw_sequencer" }
 rustdaw_sampler = { path = "../rustdaw_sampler" }
 rustdaw_effects = { path = "../rustdaw_effects" }
-
-rustdaw_visualizer = { path = "../rustdaw_visualizer" }
+[features]
+audio = ["cpal"]

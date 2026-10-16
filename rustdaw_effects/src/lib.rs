@@ -1,7 +1,5 @@
 //! Audio effects: filter, delay, reverb.
 
-use num_complex::Complex;
-
 /// Simple one-pole low-pass filter.
 /// y[n] = x[n] * (1 - c) + y[n-1] * c
 /// where c = 2 * sin(pi * fc / fs)
@@ -198,7 +196,10 @@ mod tests {
     #[test]
     fn test_low_pass_filter() {
         let mut lpf = LowPassFilter::new(1000.0, 44100.0);
-        // DC signal should pass unchanged
+        // DC signal should pass unchanged after convergence
+        for _ in 0..1000 {
+            lpf.process(1.0);
+        }
         assert!((lpf.process(1.0) - 1.0).abs() < 1e-5);
         // High frequency should be attenuated
         // We'll just check that the filter doesn't blow up
