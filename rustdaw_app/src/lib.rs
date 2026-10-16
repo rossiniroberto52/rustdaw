@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
+use rustdaw_visualizer::{AudioBuffer, Oscilloscope, SpectrumAnalyzer, VuMeter};
 
 /// Shared state between audio thread and UI thread.
 pub struct AppState {
@@ -15,15 +16,26 @@ pub struct AppState {
     pub sequencer: rustdaw_sequencer::StepSequencer,
     /// Mixer volume.
     pub master_volume: f32,
+    /// Audio buffer for visualization.
+    pub audio_buffer: AudioBuffer,
+    /// Visualizer widgets.
+    pub oscilloscope: Oscilloscope,
+    pub spectrum_analyzer: SpectrumAnalyzer,
+    pub vu_meter: VuMeter,
 }
 
 impl AppState {
     pub fn new() -> Self {
+        let audio_buffer = AudioBuffer::new(44100 * 2); // 2 seconds of stereo at 44.1kHz.
         Self {
             playing: AtomicBool::new(false),
             bpm: 120.0,
             sequencer: rustdaw_sequencer::StepSequencer::new(120.0),
             master_volume: 1.0,
+            audio_buffer,
+            oscilloscope: Oscilloscope::new(1024),
+            spectrum_analyzer: SpectrumAnalyzer::new(44100.0, 1024),
+            vu_meter: VuMeter::new(),
         }
     }
 }
@@ -53,7 +65,8 @@ impl AudioGenerator {
         }
     }
 
-    /// Generate one stereo sample.
+    /// Generate one stereo sample and push it to the audio buffer for visualization.
+    /// Returns the sample for audio output.
     pub fn next_sample(&mut self) -> [f32; 2] {
         // Update sequencer position based on time.
         let sec_per_step = 60.0 / self.state.bpm / 16.0; // 16 steps per beat
@@ -66,11 +79,16 @@ impl AudioGenerator {
 
         // For now, just get a sample from the voice.
         let sample = if self.state.playing.load(Ordering::Relaxed) {
-            self.voice.next_sample() * self.state.master_volume
+            let s = self.voice.next_sample() * self.state.master_volume;
+            [s, s]
         } else {
-            0.0
+            [0.0, 0.0]
         };
-        [sample, sample]
+
+        // Push the sample to the audio buffer (we'll push the left channel for visualization).
+        // We push both channels? We'll push the left channel as a mono signal for simplicity.
+        let _ = self.state.audio_buffer.push(sample[0]);
+        sample
     }
 }
 

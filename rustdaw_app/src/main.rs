@@ -102,6 +102,26 @@ impl eframe::App for MyApp {
                 egui::Slider::new(&mut self.state.master_volume, 0.0..=1.0)
                     .text("Volume"),
             );
+
+            ui.add_space(20.0);
+
+            // Visualizer section.
+            ui.heading("Visualizer");
+            ui.separator();
+
+            // Oscilloscope.
+            ui.label("Oscilloscope");
+            let _ = self.state.oscilloscope.ui(ui);
+            ui.add_space(10.0);
+
+            // Spectrum analyzer.
+            ui.label("Spectrum Analyzer");
+            let _ = self.state.spectrum_analyzer.ui(ui);
+            ui.add_space(10.0);
+
+            // VU meter.
+            ui.label("VU Meter");
+            let _ = self.state.vu_meter.ui(ui);
         });
     }
 }
