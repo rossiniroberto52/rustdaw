@@ -79,16 +79,45 @@ mod audio {
 
         /// Generate one stereo sample and push it to the audio buffer for visualization.
         /// Returns the sample for audio output.
-        pub fn next_sample(&mut self) -> [f32; 2] {
-            // Update sequencer position based on time.
+        pub fn next_sample(&mut self) -> [f32; 2] {            // Update sequencer position based on time.
             let sec_per_step = 60.0 / self.state.bpm / 16.0; // 16 steps per beat
             self.time_accum += 1.0 / self.sample_rate as f32;
+            let mut steps_to_advance = 0;
             while self.time_accum >= sec_per_step {
                 self.time_accum -= sec_per_step;
-                self.step_pos = (self.step_pos + 1.0) % 16.0;
-                // TODO: Trigger notes based on sequencer step.
+                steps_to_advance += 1;
             }
-
+            if steps_to_advance > 0 {
+                // Update the step position.
+                let old_step = self.step_pos as usize;
+                self.step_pos = (self.step_pos + steps_to_advance as f32) % 16.0;
+                let new_step = self.step_pos as usize;
+                
+                // Get the note for the old step (if any) and the new step (if any).
+                let old_note = self.state.sequencer.get_step(old_step).and_then(|s| s.note.clone());
+                let new_note = self.state.sequencer.get_step(new_step).and_then(|s| s.note.clone());
+                
+                // If we are playing, update the voice based on the note change.
+                if self.state.playing.load(Ordering::Relaxed) {
+                    // Turn off the old note if it is not the same as the new note.
+                    if let Some(ref note) = old_note {
+                        if new_note.as_ref() != Some(note) {
+                            self.voice.note_off();
+                            self.last_note = None;
+                        }
+                    }
+                    
+                    // Turn on the new note if it is not the same as the old note.
+                    if let Some(ref note) = new_note {
+                        if old_note.as_ref() != Some(note) {
+                            self.voice.set_frequency(midi_to_hz(note.note));
+                            self.voice.note_on();
+                            self.last_note = Some(note.clone());
+                        }
+                    }
+                }
+            }
+            
             // For now, just get a sample from the voice.
             let sample = if self.state.playing.load(Ordering::Relaxed) {
                 let s = self.voice.next_sample() * self.state.master_volume;
@@ -96,12 +125,11 @@ mod audio {
             } else {
                 [0.0, 0.0]
             };
-
+            
             // Push the sample to the audio buffer (we'll push the left channel for visualization).
             // We push both channels? We'll push the left channel as a mono signal for simplicity.
             let _ = self.state.audio_producer.push(sample[0]);
-            sample
-        }
+            sample}
     }
 
     pub fn run_audio_thread(state: Arc<AppState>) -> std::thread::JoinHandle<()> {
