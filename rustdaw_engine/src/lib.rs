@@ -215,6 +215,16 @@ impl Voice {
         }
     }
 
+    /// Set the ADSR envelope parameters.
+    pub fn set_envelope_params(&mut self, attack: f32, decay: f32, sustain: f32, release: f32) {
+        self.envelope.set_param(attack, decay, sustain, release);
+    }
+
+    /// Set the waveform of the oscillator.
+    pub fn set_waveform(&mut self, waveform: Waveform) {
+        self.oscillator.waveform = waveform;
+    }
+
     pub fn note_on(&mut self) {
         self.envelope.trigger_on();
         self.note_on = true;
