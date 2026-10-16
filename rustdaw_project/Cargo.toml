@@ -1,0 +1,14 @@
+[package]
+name = "rustdaw_project"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+rustdaw_engine = { path = "../rustdaw_engine" }
+rustdaw_sequencer = { path = "../rustdaw_sequencer" }
+rustdaw_sampler = { path = "../rustdaw_sampler" }
+rustdaw_effects = { path = "../rustdaw_effects" }
+rustdaw_app = { path = "../rustdaw_app" }
