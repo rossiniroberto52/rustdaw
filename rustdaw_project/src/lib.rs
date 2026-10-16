@@ -1,6 +1,7 @@
 //! Project management: save/load JSON and export .wav.
 
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::fs;
 use std::path::Path;
 
@@ -51,8 +52,8 @@ impl DawProject {
     where
         P: AsRef<Path>,
     {
-        use hound::{WavSpec, WavWriter};
         use rustdaw_engine::{OfflineRenderer, Voice, Waveform};
+        use rustdaw_engine::wav::{writer, WavSpec, SampleFormat};
 
         let mut renderer = OfflineRenderer::new(44100, 2);
         // Create a voice for each active step? For simplicity, we'll just use one voice that plays
@@ -69,13 +70,9 @@ impl DawProject {
             channels: 2,
             sample_rate: 44100,
             bits_per_sample: 32,
-            sample_format: hound::SampleFormat::Float,
+            sample_format: SampleFormat::F32,
         };
-        let mut writer = WavWriter::create(path, spec)?;
-        for sample in buffer {
-            writer.write_sample(sample)?;
-        }
-        writer.finalize()?;
+        writer(path, &spec, &buffer)?;
         Ok(())
     }
 }
@@ -83,12 +80,12 @@ impl DawProject {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    use std::env;
 
     #[test]
     fn test_project_save_and_load() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("test_project.json");
+        let dir = env::temp_dir();
+        let path = dir.join("test_project.json");
 
         let mut project = DawProject::new();
         project.sequencer.set_bpm(140.0);
@@ -103,16 +100,22 @@ mod tests {
         assert_eq!(loaded.sequencer.bpm, 140.0);
         assert!((loaded.master_volume - 0.8).abs() < 1e-5);
         assert_eq!(loaded.notes, "Test project");
+
+        // Clean up
+        let _ = fs::remove_file(&path);
     }
 
     #[test]
     fn test_project_export_wav() {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("test_export.wav");
+        let dir = env::temp_dir();
+        let path = dir.join("test_export.wav");
 
         let project = DawProject::new();
         // Export 0.5 seconds of audio.
         let _ = project.export_wav(&path, 0.5);
         assert!(path.exists());
+
+        // Clean up
+        let _ = fs::remove_file(&path);
     }
 }
