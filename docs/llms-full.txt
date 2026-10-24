@@ -1,0 +1,338 @@
+# RustDAW - Complete LLM Reference Document
+
+## Project Overview
+**RustDAW** - Open-source Digital Audio Workstation written in Rust. Workspace with 7 crates + root package.
+
+**Current Status (2026-10-24):** Fully functional DAW with:
+- Step sequencer (16 steps) with click-to-add notes
+- Sampler integration (load WAV, trigger on steps)
+- Effects chain (LPF → Delay → Reverb) with GUI controls
+- Polyphonic synthesis (voice pool with stealing, 1-32 voices)
+- Project save/load (JSON) + WAV export
+- Windows x64 installer (NSIS)
+
+---
+
+## Workspace Structure
+
+```
+/home/rossini/rustdaw/
+├── Cargo.toml              # Workspace manifest (7 members)
+├── README.md               # Project docs
+├── src/main.rs             # Root binary (stub - prints "Hello, world!")
+├── analyze.rs              # Standalone WAV analysis tool (RMS per 125ms window)
+├── demo_pattern.wav        # Generated test output (4s, stereo, 44.1kHz, f32)
+├── rustdaw_engine/         # Core audio engine
+├── rustdaw_sequencer/      # Step sequencer (16 steps) + piano roll
+├── rustdaw_sampler/        # WAV sampler with pitch shifting
+├── rustdaw_effects/        # Filter, delay, reverb
+├── rustdaw_visualizer/     # Oscilloscope, spectrum analyzer, VU meter (egui)
+├── rustdaw_app/            # Main app: audio (cpal) + UI (egui)
+├── rustdaw_project/        # Project save/load (JSON) + WAV export
+├── installer/              # Windows installer (NSIS)
+│   ├── rustdaw_installer.nsi
+│   ├── rustdaw_app.exe
+│   └── RustDAW-Setup-x64.exe
+├── docs/
+│   └── llms-full.txt       # THIS FILE
+└── target/                 # Build artifacts
+```
+
+---
+
+## Crate Dependency Graph
+
+```
+rustdaw_app (binary)
+  ├── rustdaw_engine
+  ├── rustdaw_sequencer
+  ├── rustdaw_sampler
+  ├── rustdaw_effects
+  ├── rustdaw_visualizer
+  └── rustdaw_project
+
+rustdaw_sampler → rustdaw_engine (for WAV reader)
+rustdaw_project → rustdaw_engine, rustdaw_sequencer, rustdaw_sampler, rustdaw_effects
+rustdaw_visualizer → eframe, rustfft, ringbuf
+```
+
+---
+
+## Key Entry Points
+
+| Crate | Entry Point | Purpose |
+|-------|-------------|---------|
+| `rustdaw_app` | `src/main.rs` → `AppState::new()` | Main GUI app (`cargo run --release -p rustdaw_app`) |
+| `rustdaw_project` | `DawProject::export_wav()` | Generates `demo_pattern.wav` (4 measures: kick/hat/synth) |
+| `analyze.rs` | `cargo run --bin analyze` | Analyzes WAV RMS per 125ms window |
+
+---
+
+## Build / Run Commands
+
+```bash
+# Build all (release)
+cargo build --release
+
+# Run main app (requires audio feature)
+cargo run --release -p rustdaw_app
+
+# Run with audio (needs ALSA dev libs)
+cargo run --release -p rustdaw_app --features audio
+
+# Run WAV analysis on demo_pattern.wav
+cargo run --bin analyze
+
+# Run tests
+cargo test --workspace
+
+# Cross-compile Windows x64
+cargo build --release --target x86_64-pc-windows-gnu -p rustdaw_app
+
+# Build Windows installer
+cd installer && makensis rustdaw_installer.nsi
+```
+
+---
+
+## Audio Feature
+
+The `audio` feature (enabled via `cargo run --release -p rustdaw_app --features audio`) activates:
+- CPAL audio output stream
+- Real-time audio thread (`AudioGenerator`)
+- Sequencer-driven voice/sampler playback
+
+Without the feature, UI runs but audio is silent.
+
+**System dependency:** `sudo apt install libasound2-dev pkg-config`
+
+---
+
+## Key Types by Crate
+
+### rustdaw_engine (Core Audio Engine)
+- `Waveform` - Sine, Square, Sawtooth, Triangle, Noise
+- `Oscillator` - Basic oscillator with `next_sample()`
+- `Adsr` - ADSR envelope with `trigger_on/off()`, `next_sample()`, `envelope_is_releasing()`
+- `Voice` - Oscillator + ADSR, implements `AudioProcessor`
+- `Mixer` - Multi-channel mixer with master volume
+- `OfflineRenderer` - Renders to buffer, writes WAV via `wav::writer`
+- `wav::reader` / `wav::writer` - WAV I/O (PCM 16/32-bit)
+
+### rustdaw_sequencer
+- `Note { note: u8, velocity: u8 }` - MIDI note
+- `Step { note: Option<Note> }` - Single sequencer step
+- `StepSequencer { steps: [Step; 16], bpm, steps_per_beat }`
+- `PianoRoll { grid: Vec<Vec<u8>>, ticks_per_beat, length_ticks }`
+
+### rustdaw_sampler
+- `Sampler { samples, sample_rate, position, pitch, looped }`
+- `from_wav(path)` - Loads mono 32-bit float WAV
+- `next_sample()` - Returns `Option<f32>` (linear interpolation)
+- `trigger()` - Reset position to start
+
+### rustdaw_effects
+- `LowPassFilter { fc, fs, prev }` - One-pole LPF
+- `Delay { delay_time, feedback, mix, fs, buffer }`
+- `Reverb` - Schroeder: 4 comb filters + 4 all-pass filters
+- `EffectChain` - LPF → Delay → Reverb (mono-in, stereo-out), all params clamped
+
+### rustdaw_visualizer
+- `AudioBuffer { producer, consumer }` - Lock-free ring buffer (split for audio/UI threads)
+- `Oscilloscope` - Waveform display
+- `SpectrumAnalyzer` - FFT magnitude spectrum (Hann window, smoothing)
+- `VuMeter` - Peak + RMS level display
+
+### rustdaw_app (Main App)
+- `AppState` - Shared state (Arc<Mutex<>>): playing, bpm, sequencer, master_volume, audio ring buffer, visualizer widgets, samplers, effect params, max_voices
+- `AudioGenerator` (audio feature) - Sequencer-driven voice pool + samplers, pushes samples to ring buffer
+- `VoicePool` - Polyphonic voice management with stealing (priority: finished > releasing > oldest)
+- `run_audio_thread()` - Spawns CPAL output stream
+
+### rustdaw_project
+- `DawProject` - Serializable project state (sequencer, piano_roll, master_volume, bpm, notes)
+- `save(path)` / `load(path)` - JSON serialization
+- `export_wav(path, duration)` - Generates 4-measure pattern (kick/hat/synth) using engine voices
+
+---
+
+## AppState Fields (Shared State)
+
+```rust
+pub struct AppState {
+    pub playing: AtomicBool,
+    pub bpm: f32,
+    pub sequencer: StepSequencer,
+    pub master_volume: f32,
+    pub audio_producer: HeapProd<f32>,
+    pub audio_consumer: HeapCons<f32>,
+    pub oscilloscope: RefCell<Oscilloscope>,
+    pub spectrum_analyzer: RefCell<SpectrumAnalyzer>,
+    pub vu_meter: RefCell<VuMeter>,
+    pub samplers: SamplerMap,  // HashMap<u8, Arc<Sampler>>
+    // Effect params
+    pub effect_lpf_cutoff: f32,
+    pub effect_delay_time: f32,
+    pub effect_delay_feedback: f32,
+    pub effect_delay_mix: f32,
+    pub effect_reverb_mix: f32,
+    pub effect_enabled: bool,
+    // Polyphony
+    pub max_voices: u32,
+}
+```
+
+---
+
+## GUI Controls (egui in main.rs)
+
+| Section | Controls |
+|---------|----------|
+| **Transport** | Play/Stop button, BPM slider (30-300) |
+| **Step Sequencer** | Note dropdown (C2-G8), 16 step buttons (click=toggle, right-click=clear) |
+| **Master Volume** | Slider (0-100%) |
+| **Effects** | Enable checkbox, LPF cutoff (log 20-20k), Delay time/feedback/mix, Reverb mix |
+| **Polyphony** | Max Voices slider (1-32) |
+| **Project** | Save/Load JSON paths, Export WAV path + duration |
+| **Visualizers** | Oscilloscope, Spectrum Analyzer, VU Meter |
+
+---
+
+## Signal Flow (Audio Thread)
+
+```
+Sequencer step advance (16 steps/beat)
+    ↓
+Note change detection (old vs new step)
+    ↓
+┌─ Sampler (if loaded for MIDI note) → trigger() → next_sample()
+└─ VoicePool (synth fallback) → note_on() → Voice (Oscillator + ADSR) → next_sample()
+    ↓
+Mix all active voices + samplers × master_volume
+    ↓
+EffectChain (LPF → Delay → Reverb) - parameters synced from AppState per sample
+    ↓
+Output to CPAL stream + push left channel to visualizer ringbuffer
+```
+
+---
+
+## VoicePool Details (Polyphony)
+
+**Location:** `rustdaw_app/src/lib.rs` (audio module)
+
+**Stealing Priority:**
+1. Finished voices (`!voice.is_active()`)
+2. Releasing voices (`voice.envelope_is_releasing()`)
+3. Oldest `trigger_time`
+
+**Methods:**
+- `note_on(midi_note, waveform)` - Retrigger existing / reuse finished / steal / add new
+- `note_off(midi_note)` - Trigger release on matching voices
+- `set_max_voices(n)` - Resize pool dynamically (called every sample from `AppState.max_voices`)
+- `next_sample()` → `[f32; 2]` - Sum all active voices
+
+---
+
+## Test Coverage
+
+Run: `cargo test --workspace`
+
+| Crate | Tests |
+|-------|-------|
+| Engine | oscillator, ADSR, offline render to WAV |
+| Sequencer | step get/set/clear, step_duration, piano roll |
+| Sampler | load WAV, next_sample, looping |
+| Effects | LPF stability, delay mix, reverb NaN check, EffectChain |
+| Visualizer | audio buffer, spectrum FFT bin detection |
+| App | state creation, ring buffer, audio generator (feature-gated) |
+| Project | save/load JSON, export_wav rhythm validation |
+
+---
+
+## Known Issues / TODOs
+
+### Fixed (this session)
+- ✅ `AudioGenerator` missing `last_note` field
+- ✅ Massive duplicate doc comment in `rustdaw_project/src/lib.rs`
+- ✅ Unused variables in tests
+- ✅ Removed duplicate `analyze_rms.rs`
+- ✅ Unused imports/dead code warnings
+- ✅ Test bug: wrong step duration (31.25ms vs 125ms)
+- ✅ **Sampler integration** - `SamplerMap`, `load_sampler()`, triggers on steps
+- ✅ **Project UI** - Save/Load/Export buttons with file paths
+- ✅ **Effects integration** - `EffectChain` + full GUI controls
+- ✅ **Polyphony** - `VoicePool` with stealing, dynamic max voices, GUI slider
+- ✅ **Sequencer UX** - Note dropdown, click-to-toggle, right-click-clear
+
+### Remaining
+- **MIDI input**: Zero support (next: `midir` crate)
+- **Multi-track**: `Mixer` supports multiple channels, but only 1 voice pool added
+- **Piano roll**: Not integrated into UI
+- **Sampler limitations**: Only mono 32-bit float WAV
+
+---
+
+## Windows Installer
+
+**Output:** `installer/RustDAW-Setup-x64.exe` (5.87 MB)
+
+**Contents:**
+- `rustdaw_app.exe` (statically linked, no MinGW DLL deps)
+- NSIS installer with:
+  - Portuguese (BR) + English
+  - Admin install to `$PROGRAMFILES64\RustDAW`
+  - Start Menu shortcuts (RustDAW + Uninstall)
+  - Desktop shortcut
+  - Proper uninstaller with registry cleanup
+  - 64-bit Windows check
+
+**To build:**
+```bash
+cargo build --release --target x86_64-pc-windows-gnu -p rustdaw_app
+cp target/x86_64-pc-windows-gnu/release/rustdaw_app.exe installer/
+cd installer && makensis rustdaw_installer.nsi
+```
+
+---
+
+## Where to Continue (Priority Order)
+
+1. **MIDI Input** - Add `midir` crate, handle MIDI note on/off → sequencer/piano roll, CC mapping to effect params
+2. **Piano Roll UI** - Integrate `PianoRoll` into egui (grid editor, zoom, scroll)
+3. **Multi-track** - Expose `Mixer` channels in UI, per-track volume/mute/solo/effects
+4. **Sampler improvements** - Stereo WAV support, pitch tracking, velocity layers
+5. **Project serialization** - Save/load effect params, sampler mappings, voice pool settings
+
+---
+
+## Key Files to Modify for Each Task
+
+| Task | Files to Touch |
+|------|----------------|
+| MIDI Input | `rustdaw_app/src/main.rs` (new MIDI thread), `rustdaw_app/src/lib.rs` (MIDI→sequencer bridge) |
+| Piano Roll | `rustdaw_app/src/main.rs` (new UI panel), `rustdaw_sequencer` (PianoRoll enhancements) |
+| Multi-track | `rustdaw_app/src/lib.rs` (multiple VoicePools/Mixers), `main.rs` (track UI) |
+| Sampler | `rustdaw_sampler/src/lib.rs` (stereo, velocity), `rustdaw_app/src/main.rs` (load UI) |
+
+---
+
+## Debugging Tips
+
+- **Audio not working:** Check ALSA (`aplay -l`), run with `--features audio`
+- **Tests flaky:** `test_wav_writer_reader` uses fixed filename - run in isolation
+- **Cross-compile issues:** Ensure `mingw-w64` installed, `.cargo/config.toml` has linker
+- **GUI not updating:** Check `AppState` mutex locking, ensure `effect_*` params synced in `next_sample()`
+
+---
+
+## Version Info
+
+- Rust edition: 2021
+- Workspace resolver: 1 (should be 2 for 2021 edition)
+- Key deps: `eframe 0.28`, `cpal 0.15`, `ringbuf 0.4`, `rustfft 6.4`, `hound 3.5`, `serde 1.0`, `midir` (planned)
+
+---
+
+**Last Updated:** 2026-10-24  
+**Session Summary:** Fixed all compilation bugs, implemented sampler, effects, polyphony, project UI, sequencer UX, Windows installer. Ready for MIDI input work.

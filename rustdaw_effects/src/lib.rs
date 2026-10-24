@@ -98,7 +98,6 @@ struct CombFilter {
     buffer: Vec<f32>,
     pos: usize,
     feedback: f32,
-    damp: f32,
     filterstore: f32,
 }
 
@@ -136,7 +135,6 @@ impl Reverb {
     }
 
     pub fn process(&mut self, sample: f32) -> f32 {
-        let mut out = sample;
         // Process through comb filters in parallel
         let mut comb_out = 0.0;
         for comb in &mut self.combs {
@@ -153,12 +151,11 @@ impl Reverb {
 }
 
 impl CombFilter {
-    pub fn new(buffer_size: usize, feedback: f32, fs: f32) -> Self {
+    pub fn new(buffer_size: usize, feedback: f32, _fs: f32) -> Self {
         Self {
             buffer: vec![0.0; buffer_size],
             pos: 0,
             feedback: feedback.clamp(0.0, 0.99),
-            damp: 0.0, // we could add damping, but keep simple
             filterstore: 0.0,
         }
     }
@@ -173,7 +170,7 @@ impl CombFilter {
 }
 
 impl AllPassFilter {
-    pub fn new(buffer_size: usize, feedback: f32, fs: f32) -> Self {
+    pub fn new(buffer_size: usize, feedback: f32, _fs: f32) -> Self {
         Self {
             buffer: vec![0.0; buffer_size],
             pos: 0,
@@ -186,6 +183,63 @@ impl AllPassFilter {
         self.buffer[self.pos] = input + output * self.feedback;
         self.pos = (self.pos + 1) % self.buffer.len();
         output
+    }
+}
+
+/// Effect chain: LPF -> Delay -> Reverb (mono in, stereo out via duplication).
+/// Order chosen so delay/reverb don't feed back into the filter.
+pub struct EffectChain {
+    lpf: LowPassFilter,
+    delay: Delay,
+    reverb: Reverb,
+    enabled: bool,
+}
+
+impl EffectChain {
+    pub fn new(fs: f32) -> Self {
+        Self {
+            lpf: LowPassFilter::new(20000.0, fs), // effectively off at Nyquist
+            delay: Delay::new(0.3, 0.3, 0.0, fs, 2.0), // 300ms delay, 30% feedback, dry only
+            reverb: Reverb::new(fs),
+            enabled: true,
+        }
+    }
+
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
+    // LPF controls
+    pub fn set_lpf_cutoff(&mut self, fc: f32) {
+        self.lpf.set_cutoff(fc.clamp(20.0, 20000.0));
+    }
+
+    // Delay controls
+    pub fn set_delay_time(&mut self, time: f32) {
+        self.delay.set_delay_time(time.clamp(0.0, 2.0));
+    }
+    pub fn set_delay_feedback(&mut self, fb: f32) {
+        self.delay.set_feedback(fb.clamp(0.0, 0.95));
+    }
+    pub fn set_delay_mix(&mut self, mix: f32) {
+        self.delay.set_mix(mix.clamp(0.0, 1.0));
+    }
+
+    // Reverb controls
+    pub fn set_reverb_mix(&mut self, mix: f32) {
+        self.reverb.set_mix(mix.clamp(0.0, 1.0));
+    }
+
+    /// Process a mono sample, return stereo pair [L, R].
+    /// Delay and reverb are mono internally; we just duplicate for stereo.
+    pub fn process(&mut self, sample: f32) -> [f32; 2] {
+        if !self.enabled {
+            return [sample, sample];
+        }
+        let mut s = self.lpf.process(sample);
+        s = self.delay.process(s);
+        s = self.reverb.process(s);
+        [s, s]
     }
 }
 
@@ -233,5 +287,23 @@ mod tests {
         // Test with silence
         let out2 = reverb.process(0.0);
         assert!(!out2.is_nan());
+    }
+
+    #[test]
+    fn test_effect_chain() {
+        let mut chain = EffectChain::new(44100.0);
+        chain.set_enabled(true);
+        chain.set_lpf_cutoff(1000.0);
+        chain.set_delay_time(0.1);
+        chain.set_delay_feedback(0.3);
+        chain.set_delay_mix(0.3);
+        chain.set_reverb_mix(0.2);
+
+        let out = chain.process(1.0);
+        assert!(!out[0].is_nan() && !out[1].is_nan());
+        // Disabled should pass through
+        chain.set_enabled(false);
+        let out2 = chain.process(0.5);
+        assert!((out2[0] - 0.5).abs() < 1e-5);
     }
 }

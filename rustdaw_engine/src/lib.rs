@@ -266,6 +266,14 @@ impl AudioProcessor for Voice {
     }
 }
 
+impl Voice {
+    /// Check if the envelope is currently in release phase.
+    pub fn envelope_is_releasing(&self) -> bool {
+        // We can't directly access the private state, so we infer from active + note_off
+        !self.note_on && self.active
+    }
+}
+
 /// Offline renderer that renders audio to a buffer.
 pub struct OfflineRenderer {
     sample_rate: u32,

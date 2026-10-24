@@ -2892,6 +2892,7 @@ dependencies = [
  "ringbuf",
  "rustdaw_effects",
  "rustdaw_engine",
+ "rustdaw_project",
  "rustdaw_sampler",
  "rustdaw_sequencer",
  "rustdaw_visualizer",
@@ -2925,7 +2926,6 @@ name = "rustdaw_project"
 version = "0.1.0"
 dependencies = [
  "hound",
- "rustdaw_app",
  "rustdaw_effects",
  "rustdaw_engine",
  "rustdaw_sampler",

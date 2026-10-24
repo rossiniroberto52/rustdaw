@@ -3,7 +3,7 @@
 use eframe::egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2, NumExt};
 use eframe::egui::epaint::{PathShape, Shape};
 use ringbuf::{HeapCons, HeapProd, HeapRb};
-use ringbuf::traits::{Consumer, Producer, Split};
+use ringbuf::traits::{Consumer, Split};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 
@@ -344,6 +344,7 @@ mod tests {
     use super::*;
     use std::f32::consts::PI;
     use ringbuf::HeapRb;
+    use ringbuf::traits::Producer;
 
     /// Helper to generate a sine wave.
     fn generate_sine_wave(freq: f32, sample_rate: f32, duration: f32) -> Vec<f32> {
