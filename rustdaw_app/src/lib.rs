@@ -1,5 +1,7 @@
 //! DAW application: audio output with cpal and UI with egui.
 
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use std::sync::atomic::AtomicBool;
 use rustdaw_visualizer::{Oscilloscope, SpectrumAnalyzer, VuMeter};
 use rustdaw_sampler::Sampler;
@@ -7,6 +9,36 @@ use ringbuf::{HeapCons, HeapProd};
 use ringbuf::traits::Split;
 use std::cell::RefCell;
 use std::sync::Arc;
+
+/// UI-relevant state that can be cloned for UI thread.
+/// This contains only the fields that the UI needs to read/write.
+#[derive(Clone, Debug)]
+pub struct UiState {
+    pub bpm: f32,
+    pub master_volume: f32,
+    pub sequencer: rustdaw_sequencer::StepSequencer,
+    pub effect_lpf_cutoff: f32,
+    pub effect_lpf_resonance: f32,
+    pub effect_delay_time: f32,
+    pub effect_delay_feedback: f32,
+    pub effect_delay_mix: f32,
+    pub effect_delay_sync: bool,
+    pub effect_reverb_mix: f32,
+    pub effect_reverb_room: f32,
+    pub effect_reverb_damp: f32,
+    pub effect_enabled: bool,
+    pub max_voices: u32,
+    pub loop_enabled: bool,
+    pub record_armed: bool,
+    pub metronome_enabled: bool,
+    pub metronome_volume: f32,
+    pub swing_amount: f32,
+    pub pattern_length: u32,
+    pub oscilloscope_grid: bool,
+    pub spectrum_log_freq: bool,
+    pub spectrum_db_scale: bool,
+    pub vu_peak_hold: bool,
+}
 
 /// Shared state between audio thread and UI thread.
 pub struct AppState {
@@ -37,6 +69,34 @@ pub struct AppState {
     pub effect_enabled: bool,
     /// Maximum number of polyphonic voices.
     pub max_voices: u32,
+    /// Loop playback enabled.
+    pub loop_enabled: bool,
+    /// Record armed.
+    pub record_armed: bool,
+    /// Metronome enabled.
+    pub metronome_enabled: bool,
+    /// Metronome volume.
+    pub metronome_volume: f32,
+    /// Swing amount (0.0 to 0.5).
+    pub swing_amount: f32,
+    /// Pattern length in steps.
+    pub pattern_length: u32,
+    /// LPF resonance.
+    pub effect_lpf_resonance: f32,
+    /// Delay tempo sync.
+    pub effect_delay_sync: bool,
+    /// Reverb room size.
+    pub effect_reverb_room: f32,
+    /// Reverb dampening.
+    pub effect_reverb_damp: f32,
+    /// Oscilloscope grid.
+    pub oscilloscope_grid: bool,
+    /// Spectrum log frequency.
+    pub spectrum_log_freq: bool,
+    /// Spectrum dB scale.
+    pub spectrum_db_scale: bool,
+    /// VU meter peak hold.
+    pub vu_peak_hold: bool,
 }
 
 /// Map of MIDI note -> Sampler for drum machine style playback.
@@ -67,7 +127,80 @@ impl AppState {
             effect_enabled: true,
             // Polyphony defaults
             max_voices: 8,
+            // New fields
+            loop_enabled: false,
+            record_armed: false,
+            metronome_enabled: false,
+            metronome_volume: 0.5,
+            swing_amount: 0.0,
+            pattern_length: 16,
+            effect_lpf_resonance: 0.0,
+            effect_delay_sync: false,
+            effect_reverb_room: 0.5,
+            effect_reverb_damp: 0.5,
+            oscilloscope_grid: false,
+            spectrum_log_freq: false,
+            spectrum_db_scale: false,
+            vu_peak_hold: false,
         }
+    }
+
+    /// Get a clone of the UI-relevant state.
+    pub fn ui_state(&self) -> UiState {
+        UiState {
+            bpm: self.bpm,
+            master_volume: self.master_volume,
+            sequencer: self.sequencer.clone(),
+            effect_lpf_cutoff: self.effect_lpf_cutoff,
+            effect_lpf_resonance: self.effect_lpf_resonance,
+            effect_delay_time: self.effect_delay_time,
+            effect_delay_feedback: self.effect_delay_feedback,
+            effect_delay_mix: self.effect_delay_mix,
+            effect_delay_sync: self.effect_delay_sync,
+            effect_reverb_mix: self.effect_reverb_mix,
+            effect_reverb_room: self.effect_reverb_room,
+            effect_reverb_damp: self.effect_reverb_damp,
+            effect_enabled: self.effect_enabled,
+            max_voices: self.max_voices,
+            loop_enabled: self.loop_enabled,
+            record_armed: self.record_armed,
+            metronome_enabled: self.metronome_enabled,
+            metronome_volume: self.metronome_volume,
+            swing_amount: self.swing_amount,
+            pattern_length: self.pattern_length,
+            oscilloscope_grid: self.oscilloscope_grid,
+            spectrum_log_freq: self.spectrum_log_freq,
+            spectrum_db_scale: self.spectrum_db_scale,
+            vu_peak_hold: self.vu_peak_hold,
+        }
+    }
+
+    /// Apply UI state changes back to AppState.
+    pub fn apply_ui_state(&mut self, ui_state: &UiState) {
+        self.bpm = ui_state.bpm;
+        self.master_volume = ui_state.master_volume;
+        self.sequencer = ui_state.sequencer.clone();
+        self.effect_lpf_cutoff = ui_state.effect_lpf_cutoff;
+        self.effect_lpf_resonance = ui_state.effect_lpf_resonance;
+        self.effect_delay_time = ui_state.effect_delay_time;
+        self.effect_delay_feedback = ui_state.effect_delay_feedback;
+        self.effect_delay_mix = ui_state.effect_delay_mix;
+        self.effect_delay_sync = ui_state.effect_delay_sync;
+        self.effect_reverb_mix = ui_state.effect_reverb_mix;
+        self.effect_reverb_room = ui_state.effect_reverb_room;
+        self.effect_reverb_damp = ui_state.effect_reverb_damp;
+        self.effect_enabled = ui_state.effect_enabled;
+        self.max_voices = ui_state.max_voices;
+        self.loop_enabled = ui_state.loop_enabled;
+        self.record_armed = ui_state.record_armed;
+        self.metronome_enabled = ui_state.metronome_enabled;
+        self.metronome_volume = ui_state.metronome_volume;
+        self.swing_amount = ui_state.swing_amount;
+        self.pattern_length = ui_state.pattern_length;
+        self.oscilloscope_grid = ui_state.oscilloscope_grid;
+        self.spectrum_log_freq = ui_state.spectrum_log_freq;
+        self.spectrum_db_scale = ui_state.spectrum_db_scale;
+        self.vu_peak_hold = ui_state.vu_peak_hold;
     }
 
     /// Load a sampler for a specific MIDI note.

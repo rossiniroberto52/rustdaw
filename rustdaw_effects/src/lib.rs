@@ -8,17 +8,23 @@ pub struct LowPassFilter {
     pub fc: f32,
     /// Sample rate in Hz.
     pub fs: f32,
+    /// Resonance (0.0 to 10.0 dB).
+    pub resonance: f32,
     /// Previous output sample.
     prev: f32,
 }
 
 impl LowPassFilter {
     pub fn new(fc: f32, fs: f32) -> Self {
-        Self { fc, fs, prev: 0.0 }
+        Self { fc, fs, resonance: 0.0, prev: 0.0 }
     }
 
     pub fn set_cutoff(&mut self, fc: f32) {
         self.fc = fc;
+    }
+
+    pub fn set_resonance(&mut self, resonance: f32) {
+        self.resonance = resonance.clamp(0.0, 10.0);
     }
 
     pub fn process(&mut self, sample: f32) -> f32 {
@@ -214,6 +220,10 @@ impl EffectChain {
         self.lpf.set_cutoff(fc.clamp(20.0, 20000.0));
     }
 
+    pub fn set_lpf_resonance(&mut self, resonance: f32) {
+        self.lpf.set_resonance(resonance.clamp(0.0, 10.0));
+    }
+
     // Delay controls
     pub fn set_delay_time(&mut self, time: f32) {
         self.delay.set_delay_time(time.clamp(0.0, 2.0));
@@ -224,10 +234,19 @@ impl EffectChain {
     pub fn set_delay_mix(&mut self, mix: f32) {
         self.delay.set_mix(mix.clamp(0.0, 1.0));
     }
+    pub fn set_delay_sync(&mut self, _sync: bool) {
+        // TODO: implement tempo sync
+    }
 
     // Reverb controls
     pub fn set_reverb_mix(&mut self, mix: f32) {
         self.reverb.set_mix(mix.clamp(0.0, 1.0));
+    }
+    pub fn set_reverb_room(&mut self, _room: f32) {
+        // TODO: implement room size
+    }
+    pub fn set_reverb_damp(&mut self, _damp: f32) {
+        // TODO: implement dampening
     }
 
     /// Process a mono sample, return stereo pair [L, R].

@@ -16,6 +16,7 @@ rustdaw_sequencer = { path = "../rustdaw_sequencer" }
 rustdaw_sampler = { path = "../rustdaw_sampler" }
 rustdaw_effects = { path = "../rustdaw_effects" }
 rustdaw_project = { path = "../rustdaw_project" }
+rfd = "0.13"
 
 [package.metadata.packager]
 format = ["nsis"]
